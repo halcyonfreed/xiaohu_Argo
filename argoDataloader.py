@@ -22,6 +22,7 @@ class ArgovereseV1DataModule(LightningDataModule):
     '''
     见库里面的定义和官网
     '''
+    def _
     def __init__(self, train_transforms=None, val_transforms=None, test_transforms=None, dims=None):
         super().__init__(train_transforms, val_transforms, test_transforms, dims):
     def train_dataloader(self) -> TRAIN_DATALOADERS:
