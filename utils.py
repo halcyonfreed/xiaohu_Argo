@@ -62,7 +62,6 @@ class TemporalData(Data):
             return super().__inc__(key,value)
         
 def init_weights(m:nn.Module)->None:
-    # 太强了！
     '''
     对model的不同组成模块m(module) 的参数的权重设置不同的初值 改
     '''
@@ -75,5 +74,5 @@ def init_weights(m:nn.Module)->None:
         # embedding有
         nn.init.ones_(m.weight)
         nn.init.zeros_(m.bias)
-
+    elif isinstance(m,)
     
