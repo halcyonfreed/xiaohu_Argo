@@ -15,7 +15,7 @@
 import torch
 from torch_geometric.data import Data
 from typing import List,Optional,Tuple # 检查type的error
-
+import torch.nn as nn
 
 class TemporalData(Data):
     # ?why要这个temporal data时序数据！！
@@ -61,3 +61,19 @@ class TemporalData(Data):
         else:
             return super().__inc__(key,value)
         
+def init_weights(m:nn.Module)->None:
+    # 太强了！
+    '''
+    对model的不同组成模块m(module) 的参数的权重设置不同的初值 改
+    '''
+    if isinstance(m,nn.Linear):
+        # embedding 有
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m,nn.LayerNorm):
+        # embedding有
+        nn.init.ones_(m.weight)
+        nn.init.zeros_(m.bias)
+
+    
