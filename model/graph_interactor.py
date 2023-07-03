@@ -139,4 +139,23 @@ class GraphInteractor(nn.Module):
                 data: TemporalData,
                 local_embed: torch.Tensor) -> torch.Tensor:
         # why subgraph
+        edge_index,_=subgraph(subset=~data['padding_mask'][:, self.historical_steps - 1], edge_index=data.edge_index)
+        rel_pos=data['positions'][edge_index[0], self.historical_steps - 1] - data['positions'][
+            edge_index[1], self.historical_steps - 1] # rel是relative相对
         
+        if data['rotate_mat'] is None:
+            rel_embed = self.rel_embed(rel_pos)
+        else:
+            rel_pos=torch.bmm(rel_pos.unsqueeze(-2), data['rotate_mat'][edge_index[1]]).squeeze(-2)
+            rel_theta = data['rotate_angles'][edge_index[0]] - data['rotate_angles'][edge_index[1]]
+            rel_theta_cos = torch.cos(rel_theta).unsqueeze(-1)
+            rel_theta_sin = torch.sin(rel_theta).unsqueeze(-1)
+            rel_embed = self.rel_embed([rel_pos, torch.cat((rel_theta_cos, rel_theta_sin), dim=-1)])
+        
+        x=local_embed
+        for layer in self.global_interactor_layers:
+            x=layer(x,edge_index,rel_embed)
+        x = self.norm(x)  # [N, D] N节点数 D=embed_dim
+        x = self.multihead_proj(x).view(-1, self.num_modes, self.embed_dim)  # [N,D]->[N,N*D]->[N, F, D] ?why F是什么
+        x=x.transpose(0,1) # [F,N,D]
+        return x

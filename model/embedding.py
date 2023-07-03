@@ -3,7 +3,15 @@ import torch.nn as nn
 from utils import init_weights
 from typing import List,Optional
 
+'''
+所谓embedding 就是堆了很多层的linear norm relu 
+that's it
+'''
+
 class SingleInputEmbedding(nn.Module):
+    '''
+    singleInput 对自车central vehicle
+    '''
     def __init__(self,
                  in_channel:int,
                  out_channel:int) -> None:
@@ -27,6 +35,9 @@ class SingleInputEmbedding(nn.Module):
         return self.embed(x)
     
 class MultipleInputEmbedding(nn.Module):
+    '''
+    multipleInput: nbr是自车的半径内 感兴趣范围内的neighbour vehicles
+    '''
     def __init__(self,
                  in_channels:List[int],
                  out_channel:int)->None:

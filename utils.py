@@ -74,5 +74,6 @@ def init_weights(m:nn.Module)->None:
         # embedding有
         nn.init.ones_(m.weight)
         nn.init.zeros_(m.bias)
-    elif isinstance(m,)
+    elif isinstance(m, nn.Embedding):
+        nn.init.normal_(m.weight, mean=0.0, std=0.02)
     
