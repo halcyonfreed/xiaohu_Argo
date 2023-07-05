@@ -14,7 +14,7 @@
 
 import torch
 from torch_geometric.data import Data
-from typing import List,Optional,Tuple # 检查type的error
+from typing import Any, List,Optional,Tuple # 检查type的error
 import torch.nn as nn
 
 class TemporalData(Data):
@@ -61,6 +61,26 @@ class TemporalData(Data):
         else:
             return super().__inc__(key,value)
         
+class DistanceDropEdge(object):
+    '''
+    我不理解, 形参是个object, very rarely seen
+    因为是要把 一个类实例 变成 可调用的对象  class->object 用object+__call__
+    '''
+    def __init__(self,max_distance:Optional[float]=None) -> None:
+        self.max_distance=max_distance
+        
+    def __call__(self, 
+                 edge_index: torch.Tensor,
+                 edge_attr: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.max_distance is None:
+            return edge_index, edge_attr
+        row, col = edge_index
+        mask = torch.norm(edge_attr, p=2, dim=-1) < self.max_distance
+        edge_index = torch.stack([row[mask], col[mask]], dim=0)
+        edge_attr = edge_attr[mask]
+        return edge_index, edge_attr
+
+
 def init_weights(m:nn.Module)->None:
     '''
     对model的不同组成模块m(module) 的参数的权重设置不同的初值 改
@@ -76,4 +96,24 @@ def init_weights(m:nn.Module)->None:
         nn.init.zeros_(m.bias)
     elif isinstance(m, nn.Embedding):
         nn.init.normal_(m.weight, mean=0.0, std=0.02)
+    
+    elif isinstance(m, nn.MultiheadAttention):
+        if m.in_proj_weight is not None:
+            fan_in = m.embed_dim
+            fan_out = m.embed_dim
+            bound = (6.0 / (fan_in + fan_out)) ** 0.5
+            nn.init.uniform_(m.in_proj_weight, -bound, bound)
+        else:
+            nn.init.xavier_uniform_(m.q_proj_weight)
+            nn.init.xavier_uniform_(m.k_proj_weight)
+            nn.init.xavier_uniform_(m.v_proj_weight)
+        if m.in_proj_bias is not None:
+            nn.init.zeros_(m.in_proj_bias)
+        nn.init.xavier_uniform_(m.out_proj.weight)
+        if m.out_proj.bias is not None:
+            nn.init.zeros_(m.out_proj.bias)
+        if m.bias_k is not None:
+            nn.init.normal_(m.bias_k, mean=0.0, std=0.02)
+        if m.bias_v is not None:
+            nn.init.normal_(m.bias_v, mean=0.0, std=0.02)
     

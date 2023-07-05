@@ -155,7 +155,7 @@ class GraphInteractor(nn.Module):
         x=local_embed
         for layer in self.global_interactor_layers:
             x=layer(x,edge_index,rel_embed)
-        x = self.norm(x)  # [N, D] N节点数 D=embed_dim
-        x = self.multihead_proj(x).view(-1, self.num_modes, self.embed_dim)  # [N,D]->[N,N*D]->[N, F, D] ?why F是什么
+        x = self.norm(x)  # [N, D]  D=embed_dim  N=节点数
+        x = self.multihead_proj(x).view(-1, self.num_modes, self.embed_dim)  # [N,D]->[N,N*D](经过D*（N*D）矩阵)->[N, F, D] ?why F是什么 为什么不是[F,N,D] F是任意量
         x=x.transpose(0,1) # [F,N,D]
         return x
