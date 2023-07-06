@@ -3,10 +3,8 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 
-from embedding import MultipleInputEmbedding
-from embedding import SingleInputEmbedding
-from utils import TemporalData
-from utils import init_weights
+from embedding import MultipleInputEmbedding, SingleInputEmbedding
+from utils import TemporalData, init_weights
 
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.typing import Adj,Size,OptTensor 

@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch
 
 from utils import init_weights,TemporalData,DistanceDropEdge
-from model.embedding import SingleInputEmbedding,MultipleInputEmbedding
+from models.embedding import SingleInputEmbedding,MultipleInputEmbedding
 
 class AAEncoder(MessagePassing):
     '''
@@ -109,6 +109,7 @@ class AAEncoder(MessagePassing):
                 size_i: Optional[int]) -> torch.Tensor:
         '''
         求nbr_embed-> nbr对自车central的相关性 attention scores α
+        计算了邻居节点j 他车 到中心节点i自车的 α
         '''
         if rotate_mat is None:
             nbr_embed = self.nbr_embed([x_j, edge_attr])
@@ -121,15 +122,15 @@ class AAEncoder(MessagePassing):
             nbr_embed = self.nbr_embed([torch.bmm(x_j.unsqueeze(-2), center_rotate_mat).squeeze(-2),
                                         torch.bmm(edge_attr.unsqueeze(-2), center_rotate_mat).squeeze(-2)])
         # 算α相关性了 用qkv
-        query = self.lin_q(center_embed_i).view(-1, self.num_heads, self.embed_dim // self.num_heads)
-        key = self.lin_k(nbr_embed).view(-1, self.num_heads, self.embed_dim // self.num_heads)
-        value = self.lin_v(nbr_embed).view(-1, self.num_heads, self.embed_dim // self.num_heads)
-        # ?why scale 降采样？？
-        scale = (self.embed_dim // self.num_heads) ** 0.5
-        alpha = (query * key).sum(dim=-1) / scale
-        alpha = softmax(alpha, index, ptr, size_i) # 是pyg里特别的稀疏softmax
-        alpha = self.attn_drop(alpha)
-        return value * alpha.unsqueeze(-1)
+        query = self.lin_q(center_embed_i).view(-1, self.num_heads, self.embed_dim // self.num_heads) # [*,8,d_k]
+        key = self.lin_k(nbr_embed).view(-1, self.num_heads, self.embed_dim // self.num_heads)  # [*,8,d_k]
+        value = self.lin_v(nbr_embed).view(-1, self.num_heads, self.embed_dim // self.num_heads)  # [*,8,d_k]
+
+        scale = (self.embed_dim // self.num_heads) ** 0.5 # 根号d_k
+        alpha = (query * key).sum(dim=-1) / scale # 逐元素相乘 维度不变 [*,8,d_k]->[*,8] 因为取了sum
+        alpha = softmax(alpha, index, ptr, size_i) # 是pyg里特别的稀疏softmax [*,8]
+        alpha = self.attn_drop(alpha) # [*,8]
+        return value * alpha.unsqueeze(-1) #alpha[*,8]->[*,8,1]自动广播复制k个对齐，value[*,8,k] return[*,8,k]
 
     def update(self,
                inputs: torch.Tensor,
@@ -183,7 +184,6 @@ class TemporalEncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-
 
     def forward(self,
                 src: torch.Tensor,
@@ -343,11 +343,11 @@ class ALEncoder(MessagePassing):
                                    self.traffic_control_embed[traffic_controls_j]])
         
         # x_i 自己 x_j其他 自己算query　其他算key,value
-        query = self.lin_q(x_i).view(-1, self.num_heads, self.embed_dim // self.num_heads)
-        key = self.lin_k(x_j).view(-1, self.num_heads, self.embed_dim // self.num_heads)
-        value = self.lin_v(x_j).view(-1, self.num_heads, self.embed_dim // self.num_heads)
+        query = self.lin_q(x_i).view(-1, self.num_heads, self.embed_dim // self.num_heads) # [,8,/8]
+        key = self.lin_k(x_j).view(-1, self.num_heads, self.embed_dim // self.num_heads) #[,8,/8]
+        value = self.lin_v(x_j).view(-1, self.num_heads, self.embed_dim // self.num_heads) #[,8,/8]
 
-        scale = (self.embed_dim // self.num_heads) ** 0.5 # why scale 就是公式根号dk那里
+        scale = (self.embed_dim // self.num_heads) ** 0.5 # 公式根号dk那里 
         alpha = (query * key).sum(dim=-1) / scale
         alpha = softmax(alpha, index, ptr, size_i)
         alpha = self.attn_drop(alpha)
