@@ -95,8 +95,7 @@ def init_weights(m:nn.Module)->None:
         nn.init.ones_(m.weight)
         nn.init.zeros_(m.bias)
     elif isinstance(m, nn.Embedding):
-        nn.init.normal_(m.weight, mean=0.0, std=0.02)
-    
+        nn.init.normal_(m.weight, mean=0.0, std=0.02)   
     elif isinstance(m, nn.MultiheadAttention):
         if m.in_proj_weight is not None:
             fan_in = m.embed_dim
@@ -116,4 +115,45 @@ def init_weights(m:nn.Module)->None:
             nn.init.normal_(m.bias_k, mean=0.0, std=0.02)
         if m.bias_v is not None:
             nn.init.normal_(m.bias_v, mean=0.0, std=0.02)
+    
+    # decoder出现
+    elif isinstance(m, nn.GRU):
+        for name, param in m.named_parameters():
+            if 'weight_ih' in name:
+                for ih in param.chunk(3, 0):
+                    nn.init.xavier_uniform_(ih)
+            elif 'weight_hh' in name:
+                for hh in param.chunk(3, 0):
+                    nn.init.orthogonal_(hh)
+            elif 'bias_ih' in name:
+                nn.init.zeros_(param)
+            elif 'bias_hh' in name:
+                nn.init.zeros_(param)
+
+    # xiaohunet出现
+    elif isinstance(m, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
+        fan_in = m.in_channels / m.groups
+        fan_out = m.out_channels / m.groups
+        bound = (6.0 / (fan_in + fan_out)) ** 0.5
+        nn.init.uniform_(m.weight, -bound, bound)
+
+    elif isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+        nn.init.ones_(m.weight)
+        nn.init.zeros_(m.bias)
+    
+    elif isinstance(m, nn.LSTM):
+        for name, param in m.named_parameters():
+            if 'weight_ih' in name:
+                for ih in param.chunk(4, 0):
+                    nn.init.xavier_uniform_(ih)
+            elif 'weight_hh' in name:
+                for hh in param.chunk(4, 0):
+                    nn.init.orthogonal_(hh)
+            elif 'weight_hr' in name:
+                nn.init.xavier_uniform_(param)
+            elif 'bias_ih' in name:
+                nn.init.zeros_(param)
+            elif 'bias_hh' in name:
+                nn.init.zeros_(param)
+                nn.init.ones_(param.chunk(4, 0)[1])
     
