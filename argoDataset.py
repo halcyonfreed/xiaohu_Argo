@@ -193,7 +193,7 @@ def process_argoverse(split:str,
     # 返回dict 那么多信息，不只是x,y!!
     return {
         'x': x[:,:20], # [N,20,2] N:num_nodes of GNN= num_vehicles
-        'positions': positions, # [N,50,2] :x的克隆 完整的20+30 ?why 不知道什么用
+        'positions': positions, # [N,50,2] :x补值前的克隆 完整的20+30 ?why 不知道什么用
         'edge_index':edge_index, # [2,N x N-1] 从N个节点挑2个组成边！PN2=N x (N-1)；2是起点终点
         'y':y, # [N,30,2]
         
