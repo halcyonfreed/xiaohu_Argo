@@ -24,7 +24,7 @@ from tqdm import tqdm
 import torch
 import pandas as pd
 import numpy as np
-from itertools import permutations
+from itertools import permutations,product
 from utils import TemporalData
 
 class ArgoverseV1Dataset(Dataset):
@@ -36,7 +36,7 @@ class ArgoverseV1Dataset(Dataset):
                  split:str,
                  transform: Optional[Callable]=None,
                  local_radius:float=50)->None:
-        super(ArgoverseV1Dataset,self).__init__(root,transform=transform) # 调用要传入root和transform ?why 这两个
+        
         self.root=root
         self._split=split # _只可class内部使用
         self._local_radius=local_radius
@@ -57,6 +57,10 @@ class ArgoverseV1Dataset(Dataset):
         self._processed_file_names=[os.path.splitext(f)[0]+'.pt' for f in self.raw_file_names] # 保留上面每个文件名，并存成.pt的list
         self._processed_paths=[os.path.join(self.processed_dir,f) for f in self._processed_file_names] # ?why 存这个
         
+        # 一定要放最后啊，否则有问题！！
+        super(ArgoverseV1Dataset,self).__init__(root,transform=transform) # 调用要传入root和transform ?why 这两个
+
+
     # 下面的都是为了区别于torch_geometric.data内的函数的特别写的自定义的，保护文件夹不被外部修改,同时简化get某个self._变量的过程，简单
     @property
     def raw_dir(self)->str:
@@ -64,7 +68,7 @@ class ArgoverseV1Dataset(Dataset):
 
     @property
     def processed_dir(self)->str:
-        return os.path.joni(self.root,self._directory,'processed')
+        return os.path.join(self.root,self._directory,'processed')
 
     @property
     def raw_file_names(self) -> Union[str, List[str], Tuple]:
@@ -116,7 +120,7 @@ def process_argoverse(split:str,
     
     # step 1: filter out the info of each vehicle (one csv is one vehicle) within the historical/observed (20 frames) period
     # 取出每个车csv所有前20帧的行histrical_df； 所有在前20帧里无重复track_ID的行df 两个不一样 # ?why
-    timestamps=list(np.sort(df['TIMESTAMP'].unique())) #list:一辆车被记录的所有帧，df['TIMESTAMP']是Series, Hash table-based unique去重以后unique()返回ndarray
+    timestamps = list(np.sort(df['TIMESTAMP'].unique())) #list:一辆车被记录的所有帧，df['TIMESTAMP']是Series, Hash table-based unique去重以后unique()返回ndarray
     historical_timestamps=timestamps[:20] # ?why 可改 只取前20帧从0-19
     historical_df=df[df['TIMESTAMP'].isin(historical_timestamps)]   # 返回boolean series，然后选择true的行
 
@@ -128,7 +132,7 @@ def process_argoverse(split:str,
     av_index=actor_ids.index(av_df[0]['TRACK_ID']) # 取自车av_df出现的第一个track_ID的在actor_id里的index,track_ID是veh_ID
     agent_df=df[df['OBJECT_TYPE']=='AGENT'].iloc
     agent_index=actor_ids.index(agent_df[0]['TRACK_ID'])
-    city=df['CITY_NAME'].values # 第一个 因为一张表里都在一个城市
+    city=df['CITY_NAME'].values[0] # 第一个 因为一张表里都在一个城市 漏了一个[0]就半天查不出！！！我好聪明放回原来的跑!! 控制变量查bug
 
     # step 2: 自己想不到make the coordinates of the scene from global to local (the origin of the coordinates is (X,Y) of AV  19th frame)
     origin=torch.tensor([av_df[19]['X'], av_df[19]['Y']], dtype=torch.float) # 每个csv车里面默认筛选好了只有50行av和agent
@@ -150,7 +154,7 @@ def process_argoverse(split:str,
         if padding_mask[node_idx,19]: #  make no predictions for actors that are unseen at the current time step
             padding_mask[node_idx,20:]=True  # 历史帧不够长，不预测,全部补值
         
-        xy=torch.from_numpy(np.stack([actor_df['X'].values,actor_df['Y'].values],axis=-1))
+        xy=torch.from_numpy(np.stack([actor_df['X'].values,actor_df['Y'].values],axis=-1)).float()
         x[node_idx,node_steps]=torch.matmul(xy-origin,rotate_mat) # 相对坐标 并旋转！！
         node_historical_steps=list(filter(lambda node_step:node_step<20,node_steps))
 
@@ -172,7 +176,7 @@ def process_argoverse(split:str,
                          x[:, 20:] - x[:, 19].unsqueeze(-2)) #　-2因为补上倒数第二维度，单取一个19 和取20：到底的维度不一样，所以要.unsqueeze(-2) 都是相对当前第20帧的坐标 -x[:,19].
     
     # 就是历史的20帧 不含第20个，从第0个-19个
-    x[:,1:20]=torch.wher((padding_mask[:,:19]|padding_mask[:,1:20]).unsqueeze(-1),
+    x[:,1:20]=torch.where((padding_mask[:,:19]|padding_mask[:,1:20]).unsqueeze(-1),
                          torch.zeros(num_nodes,19,2),
                          x[:,1:20]-x[:,:19])
     x[:,0]=torch.zeros(num_nodes,2)
@@ -215,4 +219,50 @@ def process_argoverse(split:str,
         'theta':theta, # 自车在第20帧就是19的heading arctan(Δy,Δx) 和上一帧去比！！        
     }
 
-def get_lane_features():
+def get_lane_features(am: ArgoverseMap,
+                      node_inds: List[int],
+                      node_positions: torch.Tensor,
+                      origin: torch.Tensor,
+                      rotate_mat: torch.Tensor,
+                      city: str,
+                      radius: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+                                              torch.Tensor]:
+    lane_positions, lane_vectors, is_intersections, turn_directions, traffic_controls = [], [], [], [], []
+    lane_ids = set()
+    for node_position in node_positions:
+        lane_ids.update(am.get_lane_ids_in_xy_bbox(node_position[0], node_position[1], city, radius))
+    node_positions = torch.matmul(node_positions - origin, rotate_mat).float()
+    for lane_id in lane_ids:
+        lane_centerline = torch.from_numpy(am.get_lane_segment_centerline(lane_id, city)[:, : 2]).float()
+        lane_centerline = torch.matmul(lane_centerline - origin, rotate_mat)
+        is_intersection = am.lane_is_in_intersection(lane_id, city)
+        turn_direction = am.get_lane_turn_direction(lane_id, city)
+        traffic_control = am.lane_has_traffic_control_measure(lane_id, city)
+        lane_positions.append(lane_centerline[:-1])
+        lane_vectors.append(lane_centerline[1:] - lane_centerline[:-1])
+        count = len(lane_centerline) - 1
+        is_intersections.append(is_intersection * torch.ones(count, dtype=torch.uint8))
+        if turn_direction == 'NONE':
+            turn_direction = 0
+        elif turn_direction == 'LEFT':
+            turn_direction = 1
+        elif turn_direction == 'RIGHT':
+            turn_direction = 2
+        else:
+            raise ValueError('turn direction is not valid')
+        turn_directions.append(turn_direction * torch.ones(count, dtype=torch.uint8))
+        traffic_controls.append(traffic_control * torch.ones(count, dtype=torch.uint8))
+    lane_positions = torch.cat(lane_positions, dim=0)
+    lane_vectors = torch.cat(lane_vectors, dim=0)
+    is_intersections = torch.cat(is_intersections, dim=0)
+    turn_directions = torch.cat(turn_directions, dim=0)
+    traffic_controls = torch.cat(traffic_controls, dim=0)
+
+    lane_actor_index = torch.LongTensor(list(product(torch.arange(lane_vectors.size(0)), node_inds))).t().contiguous()
+    lane_actor_vectors = \
+        lane_positions.repeat_interleave(len(node_inds), dim=0) - node_positions.repeat(lane_vectors.size(0), 1)
+    mask = torch.norm(lane_actor_vectors, p=2, dim=-1) < radius
+    lane_actor_index = lane_actor_index[:, mask]
+    lane_actor_vectors = lane_actor_vectors[mask]
+
+    return lane_vectors, is_intersections, turn_directions, traffic_controls, lane_actor_index, lane_actor_vectors

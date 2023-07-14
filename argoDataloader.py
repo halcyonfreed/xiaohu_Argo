@@ -18,7 +18,7 @@ from torch_geometric.data import DataLoader
 from typing import Optional,Callable
 from pytorch_lightning import LightningDataModule
 
-class ArgoverseV1DataModule(LightningDataModule):
+class ArgoverseV1Dataloader(LightningDataModule):
     '''
     见库里面的定义和官网
     data split之类的 都是自带的不是自己拍脑袋想的
@@ -34,7 +34,7 @@ class ArgoverseV1DataModule(LightningDataModule):
                  train_transform: Optional[Callable] = None,
                  val_transform: Optional[Callable] = None,
                  local_radius: float = 50) -> None:
-        super(ArgoverseV1DataModule, self).__init__()
+        super(ArgoverseV1Dataloader, self).__init__()
         self.root = root
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
@@ -71,3 +71,44 @@ class ArgoverseV1DataModule(LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.val_batch_size, shuffle=False, num_workers=self.num_workers,
                           pin_memory=self.pin_memory, persistent_workers=self.persistent_workers)
+
+
+
+class ArgoverseV1DataloaderTest(LightningDataModule):
+    def __init__(
+        self,
+        root: str,
+        val_batch_size: int,
+        num_workers: int = 8,
+        pin_memory: bool = True,
+        persistent_workers: bool = True,
+        train_transform: Optional[Callable] = None,
+        val_transform: Optional[Callable] = None,
+        local_radius: float = 50,
+    ) -> None:
+        super().__init__()
+        self.root = root
+        self.val_batch_size = val_batch_size
+        self.shuffle = False
+        self.pin_memory = pin_memory
+        self.persistent_workers = persistent_workers
+        self.num_workers = num_workers
+        self.train_transform = train_transform
+        self.val_transform = val_transform
+        self.local_radius = local_radius
+
+    def prepare_data(self) -> None:
+        ArgoverseV1Dataset(self.root, "test", self.val_transform, self.local_radius)
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        self.test_dataset = ArgoverseV1Dataset(self.root, "test", self.val_transform, self.local_radius)
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.val_batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
+        )

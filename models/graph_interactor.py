@@ -3,7 +3,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 
-from embedding import MultipleInputEmbedding, SingleInputEmbedding
+from models.embedding import MultipleInputEmbedding, SingleInputEmbedding
 from utils import TemporalData, init_weights
 
 from torch_geometric.nn.conv import MessagePassing

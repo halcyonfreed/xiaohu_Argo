@@ -4,6 +4,7 @@ from torch_geometric.nn.conv import MessagePassing # 不同agent lane之间的in
 from torch_geometric.data import Data,Batch
 from torch_geometric.utils import softmax,subgraph
 
+import torch.nn.functional as F
 import torch.nn as nn
 import torch
 
