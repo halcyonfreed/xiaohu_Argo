@@ -35,35 +35,32 @@ import json
 from tqdm.auto import tqdm
 import torch
 from argoverse.map_representation.map_api import ArgoverseMap
+
 # import sys
 # module不在同一个目录的, 开头加一个sys.path
 # sys.path.append('HiVT')
 # sys.path.append('HiVT/datasets')
 
-
 from models.xiaohuNet import HiVT
-
-from argoDataset import process_argoverse, get_lane_features, ArgoverseV1Dataset
-from utils import TemporalData
-
-from argoverse.map_representation.map_api import ArgoverseMap
-from argoverse.data_loading.argoverse_forecasting_loader import ArgoverseForecastingLoader
+from argoDataset import ArgoverseV1Dataset
 from argoverse.evaluation.competition_util import generate_forecasting_h5
-
 
 checkpoint_path = "/mnt/home/husiyuan/code/argo_my/ARGO1/baseline/HiVT/xiaohu_Argo/lightning_logs/version_2/checkpoints/epoch=63-step=102975.ckpt"
 model = HiVT.load_from_checkpoint(checkpoint_path=checkpoint_path, parallel=False)
+# model.eval()
+#但是好像更差了  I notice that the model should use "model.eval()" to deactivate all dropout layers before validation. With this, the result improves a lot.
 
 split = 'test'
 dataset = ArgoverseV1Dataset(root="/mnt/home/husiyuan/code/argo_my/ARGO1/data/", split=split, local_radius=model.hparams.local_radius)
 
-output_all_k6 = {}
+output_all_k6 = {} # 是dict
 probs_all = {}
 for i, inp in enumerate(tqdm(dataset)):
     x = inp.x.numpy() #
     # y = inp.y.numpy() # testset没有y
     seq_id = inp.seq_id
     positions = inp.positions.numpy() # positions是补值前的x的clone
+    
     # the location of the ego vehicle at TIMESTAMP=19 自车是原点
     origin = inp.origin.numpy().squeeze() # [1,2]->[2] tensor->numpy
     
@@ -72,6 +69,7 @@ for i, inp in enumerate(tqdm(dataset)):
     
     # ego_heading at TIMESTAMP=19  自车的朝向角
     ego_heading = inp.theta.numpy()
+    
     # 当前处理的车（自车or他车）和自车的角度差 弧度制
     ro_angle = inp.rotate_angles[agent_index].numpy()
     
@@ -87,9 +85,9 @@ for i, inp in enumerate(tqdm(dataset)):
                 ])
     
 
-    # we recover the agent trajectory from the inputs, just as a sanity check
-    offset = positions[agent_index, 19, :]
-    hist = (np.cumsum(-x[agent_index, 20::-1, :], axis=0)[::-1, :] + offset) @ rotate_mat.T + origin
+    # ?why we recover the agent trajectory from the inputs, just as a sanity check
+    offset = positions[agent_index, 19, :] # 当前车在第20帧x,y
+    hist = (np.cumsum(-x[agent_index, 20::-1, :], axis=0)[::-1, :] + offset) @ rotate_mat.T + origin #
     # fut =  (y[agent_index, :, :] + offset) @ rotate_mat.T + origin
     
 

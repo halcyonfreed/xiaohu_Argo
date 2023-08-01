@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from losses import LaplaceNLLLoss,SoftTargetCrossEntropyLoss
 from metrics import ADE, FDE, MR
 from models import GraphInteractor, LocalEncoder, MLPDecoder
-from utils import TemporalData
+from utils import TemporalData,Visualizer
 
 
 class HiVT(pl.LightningModule):
@@ -86,6 +86,10 @@ class HiVT(pl.LightningModule):
         self.minFDE = FDE()
         self.minMR = MR()
 
+        # change
+        self.result={} # 需要以dict形式存
+        # self.vis
+
     def forward(self, data: TemporalData):
         if self.rotate:
             rotate_mat = torch.empty(data.num_nodes, 2, 2, device=self.device)
@@ -106,6 +110,8 @@ class HiVT(pl.LightningModule):
         global_embed = self.global_interactor(data=data, local_embed=local_embed)
         y_hat, pi = self.decoder(local_embed=local_embed, global_embed=global_embed)
         return y_hat, pi
+    
+
 
     def training_step(self, data, batch_idx):
         '''
@@ -147,6 +153,42 @@ class HiVT(pl.LightningModule):
         self.log('val_minADE', self.minADE, prog_bar=True, on_step=False, on_epoch=True, batch_size=y_agent.size(0))
         self.log('val_minFDE', self.minFDE, prog_bar=True, on_step=False, on_epoch=True, batch_size=y_agent.size(0))
         self.log('val_minMR', self.minMR, prog_bar=True, on_step=False, on_epoch=True, batch_size=y_agent.size(0))
+
+
+    # 自己加
+    def test_step(self, data: TemporalData, batch_idx: int, dataloader_idx: int = 0):
+        y_hat, positions = self(data)
+
+        # from ego view to av view
+        y_hat = torch.matmul(y_hat, torch.transpose(data["rotate_mat"], 1, 2))
+        y_hat = y_hat + data["positions"][:, self.historical_steps - 1].unsqueeze(-2)
+
+        y_hat_agent = y_hat[:, data["agent_index"], :, :2]
+
+        # from AV centric view to abs coordinate
+        thetas = data["theta"]
+        c_ = torch.cos(thetas)
+        s_ = torch.sin(thetas)
+        rotate_mat = torch.stack([torch.stack([c_, -s_]), torch.stack([s_, c_])])
+
+        y_hat_agent = torch.matmul(y_hat_agent, rotate_mat.T) + data["origin"].unsqueeze(-2)  # [F,batch_size,future_step,2]
+
+        # for the dict as required in generate_forecasting_h5 ,key :seq_id value: trajctory in ndarray
+        seq_ids = data["seq_id"].tolist()
+        y_hat_list = list(y_hat_agent.permute(1, 0, 2, 3).cpu().numpy())  # split batch, list of [F,future_step,2]
+
+        self.result.update(dict(zip(seq_ids, y_hat_list)))  # add batch result，generating_h5 要data是dict!!
+
+        # vis some result
+        if batch_idx == 0:
+            self.visuallizer.axis = "abs"  # pred trajectory has already been rotate to abs axis
+            self.visuallizer.vis_test_trajs(
+                data["positions"][data["agent_index"]][:, : self.historical_steps].cpu(),
+                y_hat_agent.cpu(),
+                data["seq_id"].cpu(),
+                thetas=data["theta"].cpu(),
+                origins=data["origin"].cpu(),
+            )
 
     def configure_optimizers(self):
         '''
